@@ -6,6 +6,7 @@ SQL cipher go binding (see sqlite3.c for version information)
 ```sqlite3.c``` is a legacy version which can work with WeChat android version.
  
 
-# TODO
-Examples
+# Example
+See ```cmd```.
+
 
