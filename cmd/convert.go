@@ -1,16 +1,17 @@
 package main
 
 import (
-	_ ".."
 	"bytes"
 	"crypto/md5"
 	"database/sql"
 	"encoding/hex"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
-	"os"
 	"path/filepath"
+
+	_ "github.com/jdeng/go-sqlcipher"
 )
 
 func getImei(fn string) (string, error) {
@@ -70,26 +71,29 @@ func md5sum(s string) string {
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
-func convertDatabase(dbfile string, outfile string) error {
-	dir := filepath.Dir(dbfile)
+func getKey(dir string) (key string, err error) {
 	//	var uins []int32
 	imei, err := getImei(filepath.Join(dir, "CompatibleInfo.cfg"))
 	if err != nil {
 		log.Println("CompatibleInfo.cfg not found\n")
-		return err
+		return
 	}
 
 	uins, err := getUin(filepath.Join(dir, "systemInfo.cfg"))
 	if err != nil || len(uins) == 0 {
-		return err
+		return
 	}
 
 	uin := uins[0]
 	token := fmt.Sprintf("%s%d", imei, uin)
-	key := md5sum(token)[:7]
+	key = md5sum(token)[:7]
 	dir = md5sum(fmt.Sprintf("mm%d", uin))
 	log.Println("token: ", token, ", key:", key, ", dir name: ", dir)
 
+	return
+}
+
+func convertDatabase(dbfile string, key string, disableHmac bool, outfile string) error {
 	db, err := sql.Open("sqlcipher", dbfile)
 	if err != nil {
 		log.Printf("Failed to open %s. Error: %v\n", dbfile, err)
@@ -97,16 +101,18 @@ func convertDatabase(dbfile string, outfile string) error {
 	}
 	defer db.Close()
 
-	_, err = db.Exec(fmt.Sprintf("PRAGMA key='%s';", key))
+	_, err = db.Exec(fmt.Sprintf("PRAGMA key=\"%s\";", key))
 	if err != nil {
 		log.Printf("Failed to assign key %s. Error: %v\n", key, err)
 		return err
 	}
 
-	_, err = db.Exec("PRAGMA cipher_use_hmac=off;")
-	if err != nil {
-		log.Printf("Failed to turn of hmac. Error: %v\n", err)
-		return err
+	if disableHmac {
+		_, err = db.Exec("PRAGMA cipher_use_hmac=off;")
+		if err != nil {
+			log.Printf("Failed to turn of hmac. Error: %v\n", err)
+			return err
+		}
 	}
 
 	_, err = db.Exec("SELECT count(1) FROM sqlite_master;")
@@ -139,11 +145,27 @@ func convertDatabase(dbfile string, outfile string) error {
 	return nil
 }
 
+var (
+	dbFile = flag.String("db", "", "db file")
+	dbKey  = flag.String("key", "", "db key")
+	dbOut  = flag.String("out", "", "output db file")
+)
+
 func main() {
-	if len(os.Args) != 3 {
-		fmt.Printf("Usage: %s inputfile outputfile\n", os.Args[0])
-		return
+	flag.Parse()
+	if *dbFile == "" || *dbOut == "" {
+		log.Fatal("No file specified")
 	}
 
-	convertDatabase(os.Args[1], os.Args[2])
+	dbfile := *dbFile
+	var disableHmac bool
+	if *dbKey == "" {
+		dir := filepath.Dir(dbfile)
+		*dbKey, _ = getKey(dir)
+		disableHmac = true
+	} else {
+		*dbKey = fmt.Sprintf("x'%s'", *dbKey)
+		log.Printf("%s\n", *dbKey)
+	}
+	convertDatabase(dbfile, *dbKey, disableHmac, *dbOut)
 }

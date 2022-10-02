@@ -12,7 +12,8 @@ package sqlite3
 #cgo CFLAGS: -DSQLITE_TRACE_SIZE_LIMIT=15
 #cgo CFLAGS: -DSQLITE_DISABLE_INTRINSIC
 #cgo CFLAGS: -Wno-deprecated-declarations
-#cgo LDFLAGS: -lcrypto
+#cgo CFLAGS: -I/usr/local/opt/openssl@1.1/include 
+#cgo LDFLAGS: -L/usr/local/opt/openssl@1.1/lib -lcrypto 
 #include <sqlite3.h>
 #include <stdlib.h>
 #include <string.h>
